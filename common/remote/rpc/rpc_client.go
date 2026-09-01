@@ -634,11 +634,25 @@ func (r *RpcClient) Request(request rpc_request.IRequest, timeoutMills int64) (r
 				}
 				r.mux.Unlock()
 			}
+			if resp.GetErrorCode() == constant.NO_RIGHT {
+				logger.Warnf("%s request rejected by server, error code: %d, message: [%s], mark re-login",
+					request.GetRequestType(), resp.GetErrorCode(), resp.GetMessage())
+				if r.nacosServer != nil {
+					r.nacosServer.ReLogin()
+				}
+				return response, nil
+			}
 			currentErr = waitReconnect(timeoutMills, &retryTimes, request, errors.New(response.GetMessage()))
 			continue
 		}
 		if response != nil && !response.IsSuccess() {
-			logger.Warnf("%s request received fail response, error code: %d, result code: %d, message: [%s]", request.GetRequestType(), response.GetErrorCode(), response.GetResultCode(), response.GetMessage())
+			if response.GetErrorCode() == constant.NO_RIGHT || response.GetResultCode() == constant.NO_RIGHT {
+				if r.nacosServer != nil {
+					r.nacosServer.ReLogin()
+				}
+			}
+			logger.Warnf("%s request received fail response, error code: %d, result code: %d, message: [%s]",
+				request.GetRequestType(), response.GetErrorCode(), response.GetResultCode(), response.GetMessage())
 		}
 		r.lastActiveTimestamp.Store(time.Now())
 		return response, nil
