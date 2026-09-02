@@ -624,6 +624,14 @@ func (r *RpcClient) Request(request rpc_request.IRequest, timeoutMills int64) (r
 			currentErr = waitReconnect(timeoutMills, &retryTimes, request, err)
 			continue
 		}
+		if response != nil && (response.GetErrorCode() == constant.NO_RIGHT || response.GetResultCode() == constant.NO_RIGHT) {
+			if r.nacosServer != nil {
+				r.nacosServer.ReLogin()
+			}
+			r.lastActiveTimestamp.Store(time.Now())
+			return response, errors.Errorf("%s request rejected by server, error code: %d, result code: %d, message: [%s]",
+				request.GetRequestType(), response.GetErrorCode(), response.GetResultCode(), response.GetMessage())
+		}
 		if resp, ok := response.(*rpc_response.ErrorResponse); ok {
 			if resp.GetErrorCode() == constant.UN_REGISTER {
 				r.mux.Lock()
@@ -634,23 +642,10 @@ func (r *RpcClient) Request(request rpc_request.IRequest, timeoutMills int64) (r
 				}
 				r.mux.Unlock()
 			}
-			if resp.GetErrorCode() == constant.NO_RIGHT {
-				logger.Warnf("%s request rejected by server, error code: %d, message: [%s], mark re-login",
-					request.GetRequestType(), resp.GetErrorCode(), resp.GetMessage())
-				if r.nacosServer != nil {
-					r.nacosServer.ReLogin()
-				}
-				return response, nil
-			}
 			currentErr = waitReconnect(timeoutMills, &retryTimes, request, errors.New(response.GetMessage()))
 			continue
 		}
 		if response != nil && !response.IsSuccess() {
-			if response.GetErrorCode() == constant.NO_RIGHT || response.GetResultCode() == constant.NO_RIGHT {
-				if r.nacosServer != nil {
-					r.nacosServer.ReLogin()
-				}
-			}
 			logger.Warnf("%s request received fail response, error code: %d, result code: %d, message: [%s]",
 				request.GetRequestType(), response.GetErrorCode(), response.GetResultCode(), response.GetMessage())
 		}
